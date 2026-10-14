@@ -1,0 +1,131 @@
+
+#%RAML 1.0
+title: E-Commerce Order Processing API
+description: API for receiving and processing e-commerce orders
+version: v1
+baseUri: http://localhost:8081/api
+
+mediaType: application/json
+
+/orders:
+  post:
+    displayName: Submit Order
+    description: Accept an order for asynchronous processing
+    body:
+      application/json:
+        type: object
+        additionalProperties: false
+        properties:
+          orderId:
+            type: string
+            minLength: 1
+            required: true
+          orderDate:
+            type: datetime
+            required: true
+          customer:
+            type: object
+            required: true
+            properties:
+              customerId:
+                type: string
+                required: true
+              name:
+                type: string
+                required: true
+              email:
+                type: string
+                required: true
+                pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+              phone:
+                type: string
+                required: false
+          items:
+            type: array
+            minItems: 1
+            required: true
+            items:
+              type: object
+              properties:
+                productId:
+                  type: string
+                  required: true
+                productName:
+                  type: string
+                  required: true
+                quantity:
+                  type: integer
+                  minimum: 1
+                  required: true
+                unitPrice:
+                  type: number
+                  minimum: 0
+                  required: true
+          shippingAddress:
+            type: object
+            required: true
+            properties:
+              addressLine1:
+                type: string
+                required: true
+              city:
+                type: string
+                required: true
+              state:
+                type: string
+                required: true
+              postalCode:
+                type: string
+                required: true
+              country:
+                type: string
+                required: true
+          paymentMethod:
+            type: string
+            enum: [CARD, UPI, COD, NETBANKING]
+            required: true
+          currency:
+            type: string
+            minLength: 3
+            maxLength: 3
+            required: true
+          totalAmount:
+            type: number
+            minimum: 0
+            required: true
+
+    responses:
+      202:
+        description: Order accepted for asynchronous processing
+        body:
+          application/json:
+            example:
+              orderId: "ORD-2026-1001"
+              status: "RECEIVED"
+              correlationId: "b7f4c9e2-5d31-4a88-9c10-2f6ab7d5e910"
+              message: "Order accepted for processing"
+              receivedAt: "2026-09-11T10:30:00+05:30"
+
+      400:
+        description: Invalid order request
+        body:
+          application/json:
+            example:
+              error: "VALIDATION_ERROR"
+              message: "Invalid order request"
+
+      409:
+        description: Duplicate order ID
+        body:
+          application/json:
+            example:
+              error: "DUPLICATE_ORDER"
+              message: "Order ID has already been accepted"
+
+      500:
+        description: Internal server error
+        body:
+          application/json:
+            example:
+              error: "INTERNAL_ERROR"
+              message: "Unable to process the order request"

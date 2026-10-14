@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+    <configuration-properties file="config.properties" doc:name="Configuration properties"/>
+
+    <http:listener-config name="orders-httpListenerConfig">
+        <http:listener-connection host="0.0.0.0" port="8081" />
+    </http:listener-config>
+
+    <apikit:config name="orders-config" api="orders.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+
+    <jms:config name="ActiveMQ_Config" doc:name="JMS Config">
+        <jms:active-mq-connection>
+            <jms:caching-strategy>
+                <jms:no-caching />
+            </jms:caching-strategy>
+            <jms:factory-configuration brokerUrl="tcp://localhost:61616" redeliveryDelay="100" maxRedelivery="10"/>
+        </jms:active-mq-connection>
+    </jms:config>
+
+    <os:object-store name="Order_Object_Store" doc:name="Object store" persistent="true" entryTtl="1" entryTtlUnit="DAYS"/>
+
+    <db:config name="Database_Config" doc:name="Database Config">
+        <db:my-sql-connection host="${db.host}" port="${db.port}" user="${db.username}" password="${db.password}" database="${db.database}"/>
+    </db:config>
+
+    <email:smtp-config name="Gmail_SMTP_Config" doc:name="Email SMTP" from="${smtp.username}">
+        <email:smtps-connection host="smtp.gmail.com" port="465" user="${smtp.username}" password="${smtp.password}">
+            <tls:context>
+                <tls:trust-store insecure="true"/>
+            </tls:context>
+        </email:smtps-connection>
+    </email:smtp-config>
+
+    <!-- ===================== MAIN API FLOW ===================== -->
+    <flow name="orders-main">
+        <http:listener config-ref="orders-httpListenerConfig" path="/api/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="orders-config" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:BAD_REQUEST">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "VALIDATION_ERROR", message: "Invalid order request"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">400</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_FOUND">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Method not allowed"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">405</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_ACCEPTABLE">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Not acceptable"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">406</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:UNSUPPORTED_MEDIA_TYPE">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Unsupported media type"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">415</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_IMPLEMENTED">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Not Implemented"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">501</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate>
+                <ee:transform doc:name="Generic Internal Error">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "INTERNAL_ERROR", message: "Unable to process the order request"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">500</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+
+    <!--
+        NOTE: The APIKit console flow (orders-console) was removed.
+        On Windows, APIKit console 1.11.x throws:
+        "Illegal char <*> ... /console-resources-amf/**"
+        Test the API with Postman / curl: POST http://localhost:8081/api/orders
+    -->
+
+    <!-- ===================== ORDER INTAKE FLOW ===================== -->
+    <flow name="post:\orders:application\json:orders-config">
+        <logger level="INFO" doc:name="Log Order Request" message="Order intake request received"/>
+        <set-variable value="#[uuid()]" doc:name="Set Correlation ID" variableName="correlationId"/>
+        <set-variable value="#[payload.orderId]" doc:name="Set Order ID Variable" variableName="orderId"/>
+
+        <!-- Duplicate check: throws OS:KEY_ALREADY_EXISTS if this orderId was already accepted -->
+        <os:store doc:name="Store Accepted Order ID" key="#[vars.orderId]" failIfPresent="true" objectStore="Order_Object_Store">
+            <os:value><![CDATA[#[vars.correlationId]]]></os:value>
+        </os:store>
+
+        <try doc:name="Publish With Marker Rollback">
+            <jms:publish doc:name="Publish Order to Queue" destination="orders-queue" persistentDelivery="true" config-ref="ActiveMQ_Config">
+                <jms:message correlationId="#[vars.correlationId]">
+                    <jms:body><![CDATA[#[payload]]]></jms:body>
+                </jms:message>
+            </jms:publish>
+            <error-handler>
+                <on-error-propagate type="ANY" logException="true">
+                    <try doc:name="Safe Marker Removal">
+                        <os:remove doc:name="Remove Order Marker After Publish Failure" key="#[vars.orderId]" objectStore="Order_Object_Store"/>
+                        <error-handler>
+                            <on-error-continue type="OS:KEY_NOT_FOUND" logException="false"/>
+                        </error-handler>
+                    </try>
+                </on-error-propagate>
+            </error-handler>
+        </try>
+
+        <ee:transform doc:name="Build 202 Response">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    orderId: vars.orderId,
+    status: "RECEIVED",
+    correlationId: vars.correlationId,
+    message: "Order accepted for processing",
+    receivedAt: now()
+}]]></ee:set-payload>
+            </ee:message>
+            <ee:variables>
+                <ee:set-variable variableName="httpStatus">202</ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+
+        <error-handler>
+            <!-- CONTINUE (not propagate) so the 409 isn't overwritten by the catch-all in orders-main -->
+            <on-error-continue type="OS:KEY_ALREADY_EXISTS" logException="false">
+                <logger level="WARN" doc:name="Log Duplicate Order" message='#["Duplicate order rejected. Order ID: " ++ ((vars.orderId default "UNKNOWN") as String)]'/>
+                <ee:transform doc:name="Build 409 Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "DUPLICATE_ORDER",
+    message: "Order not accepted: this order ID has already been submitted",
+    orderId: vars.orderId
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">409</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-continue>
+            <on-error-propagate type="ANY" logException="true">
+                <ee:transform doc:name="Build 500 Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "INTERNAL_ERROR",
+    message: "Unable to process the order request"
+}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">500</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    <!-- ===================== ORDER CONSUMER FLOW ===================== -->
+    <flow name="orders-consumer">
+        <jms:listener doc:name="On New Message" config-ref="ActiveMQ_Config" destination="orders-queue" ackMode="AUTO"/>
+
+        <ee:transform doc:name="Validate and Prepare Order">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var incomingOrder = payload
+var orderItems = (incomingOrder.items default []) map ((item) -> {
+    productId: item.productId,
+    productName: item.productName default "",
+    quantity: item.quantity as Number,
+    unitPrice: item.unitPrice as Number,
+    lineTotal: (item.quantity as Number) * (item.unitPrice as Number)
+})
+var calculatedTotal = sum(orderItems map $.lineTotal)
+var submittedTotal = incomingOrder.totalAmount as Number
+var shippingAddressValue = if (incomingOrder.shippingAddress is Object) write(incomingOrder.shippingAddress, "application/json") else (incomingOrder.shippingAddress default "")
+var tolerance = p("order.amount.tolerance") as Number
+---
+{
+    orderId: incomingOrder.orderId,
+    orderDate: incomingOrder.orderDate,
+    customerId: incomingOrder.customer.customerId default incomingOrder.customerId,
+    customerName: incomingOrder.customer.name default incomingOrder.customerName,
+    customerEmail: incomingOrder.customer.email default incomingOrder.customerEmail,
+    customerPhone: incomingOrder.customer.phone default incomingOrder.customerPhone default "",
+    shippingAddress: shippingAddressValue,
+    paymentMethod: incomingOrder.paymentMethod,
+    currency: incomingOrder.currency,
+    items: orderItems,
+    submittedTotal: submittedTotal,
+    calculatedTotal: calculatedTotal,
+    amountMatches: abs(calculatedTotal - submittedTotal) <= tolerance,
+    correlationId: attributes.headers.correlationId default null
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+
+        <choice doc:name="Validate Order Total">
+            <when expression="#[payload.amountMatches]">
+                <set-variable value="#[payload]" doc:name="Save Order Data" variableName="orderRecord"/>
+
+                <db:insert doc:name="Insert Order" config-ref="Database_Config">
+                    <db:sql><![CDATA[INSERT INTO orders
+(order_id, correlation_id, customer_name, customer_email,
+ shipping_address, payment_method, currency, total_amount, order_status)
+VALUES
+(:orderId, :correlationId, :customerName, :customerEmail,
+ :shippingAddress, :paymentMethod, :currency, :totalAmount, :orderStatus)]]></db:sql>
+                    <db:input-parameters><![CDATA[#[{
+    orderId: vars.orderRecord.orderId,
+    correlationId: vars.orderRecord.correlationId default "",
+    customerName: vars.orderRecord.customerName,
+    customerEmail: vars.orderRecord.customerEmail,
+    shippingAddress: vars.orderRecord.shippingAddress,
+    paymentMethod: vars.orderRecord.paymentMethod,
+    currency: vars.orderRecord.currency,
+    totalAmount: vars.orderRecord.calculatedTotal,
+    orderStatus: "RECEIVED"
+}]]]></db:input-parameters>
+                </db:insert>
+
+                <foreach doc:name="Insert Order Items" collection="#[vars.orderRecord.items]">
+                    <db:insert doc:name="Insert Order Item" config-ref="Database_Config">
+                        <db:sql><![CDATA[INSERT INTO order_items
+(order_id, product_id, product_name, quantity, unit_price)
+VALUES
+(:orderId, :productId, :productName, :quantity, :unitPrice)]]></db:sql>
+                        <db:input-parameters><![CDATA[#[{
+    orderId: vars.orderRecord.orderId,
+    productId: payload.productId,
+    productName: payload.productName,
+    quantity: payload.quantity,
+    unitPrice: payload.unitPrice
+}]]]></db:input-parameters>
+                    </db:insert>
+                </foreach>
+
+                <logger level="INFO" doc:name="Log Successful Database Insert" message='#["Order saved to MySQL: " ++ (vars.orderRecord.orderId as String) ++ " | Correlation ID: " ++ ((vars.orderRecord.correlationId default "UNKNOWN") as String)]'/>
+
+                <try doc:name="Send Order Confirmation Email">
+                    <email:send doc:name="Send Gmail Confirmation" config-ref="Gmail_SMTP_Config" subject='#["Order Confirmation - " ++ (vars.orderRecord.orderId as String)]'>
+                        <email:to-addresses>
+                            <email:to-address value="#[vars.orderRecord.customerEmail]"/>
+                        </email:to-addresses>
+                        <email:body contentType="text/plain">
+                            <email:content><![CDATA[#[
+"Dear " ++ (vars.orderRecord.customerName default "Customer") ++ ",\n\nThank you for your order!\n\n" ++
+"Order ID: " ++ (vars.orderRecord.orderId as String) ++ "\n" ++
+"Order Date: " ++ ((vars.orderRecord.orderDate default "") as String) ++ "\n" ++
+"Total Amount: " ++ ((vars.orderRecord.currency default "") as String) ++ " " ++ (vars.orderRecord.calculatedTotal as String) ++ "\n\n" ++
+"Items Ordered:\n" ++
+((vars.orderRecord.items map ((item) ->
+    ((item.productName default "") as String) ++ " - Quantity: " ++ (item.quantity as String) ++ ", Unit Price: " ++ (item.unitPrice as String)
+)) joinBy "\n") ++
+"\n\nRegards,\nE-Commerce Order Processing Team"
+]]]></email:content>
+                        </email:body>
+                    </email:send>
+                    <logger level="INFO" doc:name="Log Email Sent" message='#["Confirmation email sent for order: " ++ (vars.orderRecord.orderId as String)]'/>
+                    <error-handler>
+                        <on-error-continue type="ANY" logException="true">
+                            <logger level="ERROR" doc:name="Log Email Failure" message='#["Email sending failed for order: " ++ (vars.orderRecord.orderId as String) ++ ". The order was already saved. Check the error details in the logs."]'/>
+                        </on-error-continue>
+                    </error-handler>
+                </try>
+            </when>
+            <otherwise>
+                <logger level="ERROR" doc:name="Log Invalid Order Total" message='#["Invalid order total. Order ID: " ++ ((payload.orderId default "UNKNOWN") as String) ++ " | Submitted: " ++ ((payload.submittedTotal default 0) as String) ++ " | Calculated: " ++ ((payload.calculatedTotal default 0) as String)]'/>
+                <jms:publish doc:name="Publish Invalid Order" config-ref="ActiveMQ_Config" destination="orders-exception-queue">
+                    <jms:message>
+                        <jms:body><![CDATA[#[write(payload, "application/json")]]]></jms:body>
+                    </jms:message>
+                </jms:publish>
+            </otherwise>
+        </choice>
+    </flow>
+</mule>
