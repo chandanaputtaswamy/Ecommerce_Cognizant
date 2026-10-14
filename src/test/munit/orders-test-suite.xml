@@ -1,18 +1,1223 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
-	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+
+	xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+
+	xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+
+	xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+
+	xmlns:email="http://www.mulesoft.org/schema/mule/email"
+
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+
 	xsi:schemaLocation="
-		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-		http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
-		http://www.mulesoft.org/schema/mule/munit-tools  http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd*
+
+		http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd*
+
+		http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd*
+
+		http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd*
+
+		http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd*
+
+		http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd*
+
+		http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd*
+
+		http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd">
+
+
+
 	<munit:config name="orders-test-suite.xml" />
-	<munit:test name="orders-test-suite-orders-consumerTest" doc:id="d2be8112-0066-42bf-9209-1a2c228dd6fa" description="Test">
-		<munit:execution >
-			<flow-ref doc:name="Flow-ref to orders-consumer" doc:id="aef52ad8-8aee-4665-93c9-d1aabd7740a1" name="orders-consumer"/>
+
+
+
+	<!-- =====================================================================
+
+	     DEFAULT "HAPPY PATH" MOCKS - run before every test.
+
+	     Individual tests override these where they need an error or a duplicate.
+
+	     ===================================================================== -->
+
+	<munit:before-test name="default-mocks" description="Mock every external system">
+
+		<!-- DB duplicate check: 0 = order ID not found -->
+
+		<munit-tools:mock-when processor="db:select">
+
+			<munit-tools:then-return>
+
+				<munit-tools:payload value="#[[{cnt: 0}]]" mediaType="application/java"/>
+
+			</munit-tools:then-return>
+
+		</munit-tools:mock-when>
+
+		<munit-tools:mock-when processor="os:store">
+
+			<munit-tools:then-return>
+
+				<munit-tools:payload value="#[payload]"/>
+
+			</munit-tools:then-return>
+
+		</munit-tools:mock-when>
+
+		<munit-tools:mock-when processor="os:remove">
+
+			<munit-tools:then-return>
+
+				<munit-tools:payload value="#[payload]"/>
+
+			</munit-tools:then-return>
+
+		</munit-tools:mock-when>
+
+		<munit-tools:mock-when processor="jms:publish">
+
+			<munit-tools:then-return>
+
+				<munit-tools:payload value="#[payload]"/>
+
+			</munit-tools:then-return>
+
+		</munit-tools:mock-when>
+
+		<munit-tools:mock-when processor="db:insert">
+
+			<munit-tools:then-return>
+
+				<munit-tools:payload value="#[payload]"/>
+
+			</munit-tools:then-return>
+
+		</munit-tools:mock-when>
+
+		<munit-tools:mock-when processor="email:send">
+
+			<munit-tools:then-return>
+
+				<munit-tools:payload value="#[payload]"/>
+
+			</munit-tools:then-return>
+
+		</munit-tools:mock-when>
+
+	</munit:before-test>
+
+
+
+
+
+	<!-- #####################################################################
+
+	     PART 1: orders-main  (APIKit router + error mapping)
+
+	     \##################################################################### -->
+
+
+
+	<munit:test name="main-routes-successfully" description="Router succeeds, so the response passes through">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="apikit:router">
+
+				<munit-tools:then-return>
+
+					<munit-tools:payload value="#['routed']"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-main"/>
+
 		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[payload]" is="#[MunitTools::equalTo('routed')]"/>
+
+		</munit:validation>
+
 	</munit:test>
+
+
+
+	<munit:test name="main-bad-request-returns-400" description="APIKIT:BAD_REQUEST gives 400 and VALIDATION_ERROR">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="apikit:router">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="APIKIT:BAD_REQUEST"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="orders-main"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(400)]"/>
+
+			<munit-tools:assert-that expression="#[payload.error]" is="#[MunitTools::equalTo('VALIDATION_ERROR')]"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="main-not-found-returns-404" description="APIKIT:NOT_FOUND gives 404">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="apikit:router">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="APIKIT:NOT_FOUND"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="orders-main"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(404)]"/>
+
+			<munit-tools:assert-that expression="#[payload.message]" is="#[MunitTools::equalTo('Resource not found')]"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="main-method-not-allowed-returns-405" description="APIKIT:METHOD_NOT_ALLOWED gives 405">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="apikit:router">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="APIKIT:METHOD_NOT_ALLOWED"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="orders-main"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(405)]"/>
+
+			<munit-tools:assert-that expression="#[payload.message]" is="#[MunitTools::equalTo('Method not allowed')]"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="main-not-acceptable-returns-406" description="APIKIT:NOT_ACCEPTABLE gives 406">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="apikit:router">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="APIKIT:NOT_ACCEPTABLE"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="orders-main"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(406)]"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="main-unsupported-media-type-returns-415" description="APIKIT:UNSUPPORTED_MEDIA_TYPE gives 415">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="apikit:router">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="APIKIT:UNSUPPORTED_MEDIA_TYPE"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="orders-main"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(415)]"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="main-not-implemented-returns-501" description="APIKIT:NOT_IMPLEMENTED gives 501">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="apikit:router">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="APIKIT:NOT_IMPLEMENTED"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="orders-main"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(501)]"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="main-unexpected-error-returns-500" description="Any other error hits the generic handler and gives 500">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="apikit:router">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="MULE:EXPRESSION"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="orders-main"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(500)]"/>
+
+			<munit-tools:assert-that expression="#[payload.error]" is="#[MunitTools::equalTo('INTERNAL_ERROR')]"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+
+
+	<!-- #####################################################################
+
+	     PART 2: intake flow  post:\orders:application\json:orders-config
+
+	     \##################################################################### -->
+
+
+
+	<munit:test name="intake-new-order-returns-202" description="New order ID: stored, published, 202 returned">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload value="#[output application/json --- {orderId: 'ORD-T-1001'}]" mediaType="application/json"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="post:\orders:application\json:orders-config"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(202)]"/>
+
+			<munit-tools:assert-that expression="#[payload.status]" is="#[MunitTools::equalTo('RECEIVED')]"/>
+
+			<munit-tools:assert-that expression="#[payload.orderId]" is="#[MunitTools::equalTo('ORD-T-1001')]"/>
+
+			<munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::notNullValue()]"/>
+
+			<munit-tools:verify-call processor="os:store" times="1"/>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="intake-duplicate-in-database-returns-409" description="Order ID already in MySQL: 409, nothing stored or published">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="db:select">
+
+				<munit-tools:then-return>
+
+					<munit-tools:payload value="#[[{cnt: 1}]]" mediaType="application/java"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+			<munit:set-event>
+
+				<munit-tools:payload value="#[output application/json --- {orderId: 'ORD-T-1002'}]" mediaType="application/json"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="post:\orders:application\json:orders-config"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(409)]"/>
+
+			<munit-tools:assert-that expression="#[payload.error]" is="#[MunitTools::equalTo('DUPLICATE_ORDER')]"/>
+
+			<munit-tools:assert-that expression="#[payload.orderId]" is="#[MunitTools::equalTo('ORD-T-1002')]"/>
+
+			<munit-tools:verify-call processor="os:store" times="0"/>
+
+			<munit-tools:verify-call processor="jms:publish" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="intake-duplicate-in-object-store-returns-409" description="Order ID already in Object Store: 409, not published">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="os:store">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="OS:KEY_ALREADY_EXISTS"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+			<munit:set-event>
+
+				<munit-tools:payload value="#[output application/json --- {orderId: 'ORD-T-1003'}]" mediaType="application/json"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="post:\orders:application\json:orders-config"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(409)]"/>
+
+			<munit-tools:assert-that expression="#[payload.error]" is="#[MunitTools::equalTo('DUPLICATE_ORDER')]"/>
+
+			<munit-tools:verify-call processor="jms:publish" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="intake-publish-failure-returns-500-and-removes-marker" description="JMS publish fails: marker removed, 500 returned">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="jms:publish">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="JMS:CONNECTIVITY"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+			<munit:set-event>
+
+				<munit-tools:payload value="#[output application/json --- {orderId: 'ORD-T-1004'}]" mediaType="application/json"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="post:\orders:application\json:orders-config"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(500)]"/>
+
+			<munit-tools:assert-that expression="#[payload.error]" is="#[MunitTools::equalTo('INTERNAL_ERROR')]"/>
+
+			<munit-tools:verify-call processor="os:remove" times="1"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="intake-publish-failure-ignores-missing-marker" description="Publish fails AND marker is already gone: still 500, no crash in cleanup">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="jms:publish">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="JMS:CONNECTIVITY"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+			<munit-tools:mock-when processor="os:remove">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="OS:KEY_NOT_FOUND"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+			<munit:set-event>
+
+				<munit-tools:payload value="#[output application/json --- {orderId: 'ORD-T-1005'}]" mediaType="application/json"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="post:\orders:application\json:orders-config"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(500)]"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="intake-database-failure-returns-500" description="MySQL check itself fails: 500, nothing published">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="db:select">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="DB:CONNECTIVITY"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+			<munit:set-event>
+
+				<munit-tools:payload value="#[output application/json --- {orderId: 'ORD-T-1006'}]" mediaType="application/json"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<try>
+
+				<flow-ref name="post:\orders:application\json:orders-config"/>
+
+				<error-handler>
+
+					<on-error-continue type="ANY"/>
+
+				</error-handler>
+
+			</try>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.httpStatus as Number]" is="#[MunitTools::equalTo(500)]"/>
+
+			<munit-tools:verify-call processor="jms:publish" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+
+
+	<!-- #####################################################################
+
+	     PART 3: orders-consumer
+
+	     \##################################################################### -->
+
+
+
+	<!-- -&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45; VALID ORDERS -&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45; -->
+
+
+
+	<munit:test name="consumer-valid-order-saved-and-emailed" description="Valid order: 1 order row + 1 item row, 1 email, no exception queue">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-2001', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 2, unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 100}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.orderRecord.orderId]" is="#[MunitTools::equalTo('ORD-T-2001')]"/>
+
+			<munit-tools:assert-that expression="#[vars.orderRecord.calculatedTotal]" is="#[MunitTools::equalTo(100)]"/>
+
+			<munit-tools:assert-that expression="#[vars.orderRecord.amountMatches]" is="#[MunitTools::equalTo(true)]"/>
+
+			<munit-tools:verify-call processor="db:insert" times="2"/>
+
+			<munit-tools:verify-call processor="email:send" times="1"/>
+
+			<munit-tools:verify-call processor="jms:publish" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-multiple-items-calculates-total" description="Two items: one row each, total is the sum">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-2002', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 2, unitPrice: 50}, {productId: 'P2', productName: 'Book', quantity: 1, unitPrice: 250}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'UPI', currency: 'INR', totalAmount: 350}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.orderRecord.calculatedTotal]" is="#[MunitTools::equalTo(350)]"/>
+
+			<munit-tools:verify-call processor="db:insert" times="3"/>
+
+			<munit-tools:verify-call processor="email:send" times="1"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-numeric-strings-accepted" description="quantity '2' and unitPrice '50' (strings) are valid">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-2003', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: '2', unitPrice: '50'}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 100}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:assert-that expression="#[vars.orderRecord.calculatedTotal]" is="#[MunitTools::equalTo(100)]"/>
+
+			<munit-tools:verify-call processor="db:insert" times="2"/>
+
+			<munit-tools:verify-call processor="jms:publish" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<!-- -&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45; INVALID ORDERS: must go to orders-exception-queue only -&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45; -->
+
+
+
+	<munit:test name="consumer-quantity-not-numeric-goes-to-exception-queue" description="quantity 'abc': exception queue, no DB, no email">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-3001', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 'abc', unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 100}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+			<munit-tools:verify-call processor="db:insert" times="0"/>
+
+			<munit-tools:verify-call processor="email:send" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-unitprice-not-numeric-goes-to-exception-queue" description="unitPrice 'hello': exception queue, no DB, no email">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-3002', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 2, unitPrice: 'hello'}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 100}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+			<munit-tools:verify-call processor="db:insert" times="0"/>
+
+			<munit-tools:verify-call processor="email:send" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-missing-quantity-goes-to-exception-queue" description="quantity missing: exception queue">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-3003', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 100}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+			<munit-tools:verify-call processor="db:insert" times="0"/>
+
+			<munit-tools:verify-call processor="email:send" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-empty-items-goes-to-exception-queue" description="items: []: exception queue">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-3004', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 0}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+			<munit-tools:verify-call processor="db:insert" times="0"/>
+
+			<munit-tools:verify-call processor="email:send" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-total-not-numeric-goes-to-exception-queue" description="totalAmount 'abc': exception queue">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-3005', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 2, unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 'abc'}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+			<munit-tools:verify-call processor="db:insert" times="0"/>
+
+			<munit-tools:verify-call processor="email:send" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-total-mismatch-goes-to-exception-queue" description="Submitted total 999 vs calculated 100: exception queue">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-3006', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 2, unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 999}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+			<munit-tools:verify-call processor="db:insert" times="0"/>
+
+			<munit-tools:verify-call processor="email:send" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<!-- -&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45; ZERO / NEGATIVE VALUES -&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;
+
+	     These only pass with the LATEST orders.xml (the version with the
+
+	     "quantity > 0 and unitPrice >= 0" check). They are ignored for now.
+
+	     After you update orders.xml, delete ignore="true" from these two tests. -->
+
+
+
+	<munit:test name="consumer-zero-quantity-goes-to-exception-queue" ignore="true" description="quantity 0: exception queue">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-3007', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 0, unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 0}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+			<munit-tools:verify-call processor="db:insert" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-negative-quantity-goes-to-exception-queue" ignore="true" description="quantity -2: exception queue">
+
+		<munit:behavior>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-3008', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: -2, unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: -100}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="jms:publish" times="1"/>
+
+			<munit-tools:verify-call processor="db:insert" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<!-- -&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45; FAILURE HANDLING -&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45; -->
+
+
+
+	<munit:test name="consumer-email-failure-does-not-fail-order" description="Gmail fails: order is still saved and the flow completes">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="email:send">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="EMAIL:CONNECTIVITY"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-4001', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 2, unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 100}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+		<munit:validation>
+
+			<munit-tools:verify-call processor="db:insert" times="2"/>
+
+			<munit-tools:verify-call processor="email:send" times="1"/>
+
+			<munit-tools:verify-call processor="jms:publish" times="0"/>
+
+		</munit:validation>
+
+	</munit:test>
+
+
+
+	<munit:test name="consumer-database-failure-propagates-error" expectedErrorType="DB:CONNECTIVITY" description="MySQL insert fails: error propagates so ActiveMQ can redeliver">
+
+		<munit:behavior>
+
+			<munit-tools:mock-when processor="db:insert">
+
+				<munit-tools:then-return>
+
+					<munit-tools:error typeId="DB:CONNECTIVITY"/>
+
+				</munit-tools:then-return>
+
+			</munit-tools:mock-when>
+
+			<munit:set-event>
+
+				<munit-tools:payload mediaType="application/json" value="#[output application/json --- {orderId: 'ORD-T-4002', orderDate: '2026-10-14T10:00:00Z', customer: {customerId: 'C1', name: 'Test User', email: 'test@example.com'}, items: [{productId: 'P1', productName: 'Pen', quantity: 2, unitPrice: 50}], shippingAddress: {addressLine1: '1 Main St', city: 'Bengaluru', state: 'KA', postalCode: '560001', country: 'IN'}, paymentMethod: 'CARD', currency: 'INR', totalAmount: 100}]"/>
+
+			</munit:set-event>
+
+		</munit:behavior>
+
+		<munit:execution>
+
+			<flow-ref name="orders-consumer"/>
+
+		</munit:execution>
+
+	</munit:test>
+
 
 
 </mule>

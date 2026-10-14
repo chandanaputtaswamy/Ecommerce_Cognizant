@@ -242,7 +242,7 @@ output application/json
             </on-error-propagate>
         </error-handler>
     </flow>
-    <!-- ===================== ORDER CONSUMER FLOW ===================== -->
+        <!-- ===================== ORDER CONSUMER FLOW ===================== -->
     <flow name="orders-consumer">
         <jms:listener doc:name="On New Message" config-ref="ActiveMQ_Config" destination="orders-queue" ackMode="AUTO"/>
 
@@ -250,18 +250,54 @@ output application/json
             <ee:message>
                 <ee:set-payload><![CDATA[%dw 2.0
 output application/java
+
 var incomingOrder = payload
-var orderItems = (incomingOrder.items default []) map ((item) -> {
-    productId: item.productId,
-    productName: item.productName default "",
-    quantity: item.quantity as Number,
-    unitPrice: item.unitPrice as Number,
-    lineTotal: (item.quantity as Number) * (item.unitPrice as Number)
-})
-var calculatedTotal = sum(orderItems map $.lineTotal)
-var submittedTotal = incomingOrder.totalAmount as Number
-var shippingAddressValue = if (incomingOrder.shippingAddress is Object) write(incomingOrder.shippingAddress, "application/json") else (incomingOrder.shippingAddress default "")
+var rawItems = incomingOrder.items default []
 var tolerance = p("order.amount.tolerance") as Number
+
+// Accept numbers and numeric strings only
+fun isNumericValue(value) =
+    value is Number or
+    (value is String and (value matches /^-?[0-9]+(\.[0-9]+)?$/))
+
+fun isValidItem(item) =
+    item is Object
+    and isNumericValue(item.quantity default null)
+    and isNumericValue(item.unitPrice default null)
+
+// ---------- STEP 1: validate BEFORE any "as Number" conversion ----------
+var itemsAreValid =
+    (rawItems is Array)
+    and (sizeOf(rawItems) > 0)
+    and (sizeOf(rawItems filter ((item) -> !isValidItem(item))) == 0)
+
+var totalIsValid = isNumericValue(incomingOrder.totalAmount default null)
+var inputsValid = itemsAreValid and totalIsValid
+
+// ---------- STEP 2: convert only if validation passed ----------
+var orderItems =
+    if (inputsValid)
+        (rawItems map ((item) -> {
+            productId: item.productId,
+            productName: item.productName default "",
+            quantity: item.quantity as Number,
+            unitPrice: item.unitPrice as Number,
+            lineTotal: (item.quantity as Number) * (item.unitPrice as Number)
+        }))
+    else []
+
+var calculatedTotal = if (inputsValid) sum(orderItems map $.lineTotal) else 0
+var submittedTotal = if (inputsValid) (incomingOrder.totalAmount as Number) else 0
+var amountMatches = inputsValid and (abs(calculatedTotal - submittedTotal) <= tolerance)
+
+var validationError =
+    if (!(rawItems is Array) or sizeOf(rawItems) == 0) "Items are missing or empty"
+    else if (!itemsAreValid) "Item quantity or unitPrice is not numeric"
+    else if (!totalIsValid) "totalAmount is not numeric"
+    else if (!amountMatches) "Submitted total does not match calculated total"
+    else null
+
+var shippingAddressValue = if (incomingOrder.shippingAddress is Object) write(incomingOrder.shippingAddress, "application/json") else (incomingOrder.shippingAddress default "")
 ---
 {
     orderId: incomingOrder.orderId,
@@ -274,9 +310,11 @@ var tolerance = p("order.amount.tolerance") as Number
     paymentMethod: incomingOrder.paymentMethod,
     currency: incomingOrder.currency,
     items: orderItems,
+    originalItems: rawItems,
     submittedTotal: submittedTotal,
     calculatedTotal: calculatedTotal,
-    amountMatches: abs(calculatedTotal - submittedTotal) <= tolerance,
+    amountMatches: amountMatches,
+    validationError: validationError,
     correlationId: attributes.headers.correlationId default null
 }]]></ee:set-payload>
             </ee:message>
@@ -351,8 +389,10 @@ VALUES
                     </error-handler>
                 </try>
             </when>
+
+            <!-- Invalid quantity / unitPrice / totalAmount, or total mismatch: never reaches MySQL or email -->
             <otherwise>
-                <logger level="ERROR" doc:name="Log Invalid Order Total" message='#["Invalid order total. Order ID: " ++ ((payload.orderId default "UNKNOWN") as String) ++ " | Submitted: " ++ ((payload.submittedTotal default 0) as String) ++ " | Calculated: " ++ ((payload.calculatedTotal default 0) as String)]'/>
+                <logger level="ERROR" doc:name="Log Invalid Order" message='#["Invalid order. Order ID: " ++ ((payload.orderId default "UNKNOWN") as String) ++ " | Reason: " ++ ((payload.validationError default "Unknown") as String)]'/>
                 <jms:publish doc:name="Publish Invalid Order" config-ref="ActiveMQ_Config" destination="orders-exception-queue">
                     <jms:message>
                         <jms:body><![CDATA[#[write(payload, "application/json")]]]></jms:body>
