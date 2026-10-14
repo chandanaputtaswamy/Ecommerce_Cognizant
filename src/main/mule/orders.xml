@@ -146,13 +146,24 @@ output application/json
         Test the API with Postman / curl: POST http://localhost:8081/api/orders
     -->
 
-    <!-- ===================== ORDER INTAKE FLOW ===================== -->
+        <!-- ===================== ORDER INTAKE FLOW ===================== -->
     <flow name="post:\orders:application\json:orders-config">
         <logger level="INFO" doc:name="Log Order Request" message="Order intake request received"/>
         <set-variable value="#[uuid()]" doc:name="Set Correlation ID" variableName="correlationId"/>
         <set-variable value="#[payload.orderId]" doc:name="Set Order ID Variable" variableName="orderId"/>
 
-        <!-- Duplicate check: throws OS:KEY_ALREADY_EXISTS if this orderId was already accepted -->
+        <!-- CHECK 1 (permanent): has this order ID already been saved in MySQL? -->
+        <db:select doc:name="Check Order Exists In DB" config-ref="Database_Config" target="existingCount" targetValue="#[payload[0].cnt default 0]">
+            <db:sql><![CDATA[SELECT COUNT(*) AS cnt FROM orders WHERE order_id = :orderId]]></db:sql>
+            <db:input-parameters><![CDATA[#[{ orderId: vars.orderId }]]]></db:input-parameters>
+        </db:select>
+        <choice doc:name="Is Duplicate In DB?">
+            <when expression="#[vars.existingCount > 0]">
+                <raise-error doc:name="Raise Duplicate Error" type="APP:DUPLICATE_ORDER" description="Order ID already exists in database"/>
+            </when>
+        </choice>
+
+        <!-- CHECK 2 (fast, atomic): catches same ID submitted twice before the consumer saves it -->
         <os:store doc:name="Store Accepted Order ID" key="#[vars.orderId]" failIfPresent="true" objectStore="Order_Object_Store">
             <os:value><![CDATA[#[vars.correlationId]]]></os:value>
         </os:store>
@@ -194,8 +205,8 @@ output application/json
         </ee:transform>
 
         <error-handler>
-            <!-- CONTINUE (not propagate) so the 409 isn't overwritten by the catch-all in orders-main -->
-            <on-error-continue type="OS:KEY_ALREADY_EXISTS" logException="false">
+            <!-- Handles BOTH duplicate sources: Object Store and MySQL -->
+            <on-error-continue type="OS:KEY_ALREADY_EXISTS, APP:DUPLICATE_ORDER" logException="false">
                 <logger level="WARN" doc:name="Log Duplicate Order" message='#["Duplicate order rejected. Order ID: " ++ ((vars.orderId default "UNKNOWN") as String)]'/>
                 <ee:transform doc:name="Build 409 Response">
                     <ee:message>
