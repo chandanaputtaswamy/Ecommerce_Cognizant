@@ -264,7 +264,9 @@ fun isValidItem(item) =
     item is Object
     and isNumericValue(item.quantity default null)
     and isNumericValue(item.unitPrice default null)
-
+    and ((item.quantity as Number) > 0)
+    and ((item.unitPrice as Number) >= 0)
+    
 // ---------- STEP 1: validate BEFORE any "as Number" conversion ----------
 var itemsAreValid =
     (rawItems is Array)
@@ -292,7 +294,7 @@ var amountMatches = inputsValid and (abs(calculatedTotal - submittedTotal) <= to
 
 var validationError =
     if (!(rawItems is Array) or sizeOf(rawItems) == 0) "Items are missing or empty"
-    else if (!itemsAreValid) "Item quantity or unitPrice is not numeric"
+    else if (!itemsAreValid) "Item quantity must be > 0 and unitPrice must be >= 0 (numeric)"
     else if (!totalIsValid) "totalAmount is not numeric"
     else if (!amountMatches) "Submitted total does not match calculated total"
     else null
@@ -307,6 +309,7 @@ var shippingAddressValue = if (incomingOrder.shippingAddress is Object) write(in
     customerEmail: incomingOrder.customer.email default incomingOrder.customerEmail,
     customerPhone: incomingOrder.customer.phone default incomingOrder.customerPhone default "",
     shippingAddress: shippingAddressValue,
+	city: if (incomingOrder.shippingAddress is Object) (incomingOrder.shippingAddress.city default "") else "",
     paymentMethod: incomingOrder.paymentMethod,
     currency: incomingOrder.currency,
     items: orderItems,
@@ -381,10 +384,18 @@ VALUES
 ]]]></email:content>
                         </email:body>
                     </email:send>
-                    <logger level="INFO" doc:name="Log Email Sent" message='#["Confirmation email sent for order: " ++ (vars.orderRecord.orderId as String)]'/>
+                                        <logger level="INFO" doc:name="Log Email Sent" message='#["Confirmation email sent for order: " ++ (vars.orderRecord.orderId as String)]'/>
+                    <db:update doc:name="Mark Email SENT" config-ref="Database_Config">
+                        <db:sql><![CDATA[UPDATE orders SET email_status = :status WHERE order_id = :orderId]]></db:sql>
+                        <db:input-parameters><![CDATA[#[{ status: "SENT", orderId: vars.orderRecord.orderId }]]]></db:input-parameters>
+                    </db:update>
                     <error-handler>
                         <on-error-continue type="ANY" logException="true">
                             <logger level="ERROR" doc:name="Log Email Failure" message='#["Email sending failed for order: " ++ (vars.orderRecord.orderId as String) ++ ". The order was already saved. Check the error details in the logs."]'/>
+                            <db:update doc:name="Mark Email FAILED" config-ref="Database_Config">
+                                <db:sql><![CDATA[UPDATE orders SET email_status = :status WHERE order_id = :orderId]]></db:sql>
+                                <db:input-parameters><![CDATA[#[{ status: "FAILED", orderId: vars.orderRecord.orderId }]]]></db:input-parameters>
+                            </db:update>
                         </on-error-continue>
                     </error-handler>
                 </try>
